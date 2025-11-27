@@ -21,14 +21,17 @@ import {
   ZAxis,
 } from "recharts";
 
-/* ---------- helpers ---------- */
+/* Responsive dashboard with friendlier axis ticks and formatting.
+   Place public/heart.csv in your project.
+*/
+
 const AGE_BIN_SIZE = 5;
 function ageBinLabel(age) {
   const low = Math.floor(age / AGE_BIN_SIZE) * AGE_BIN_SIZE;
   return `${low}-${low + AGE_BIN_SIZE - 1}`;
 }
 function parseHeartRisk(raw) {
-  if (!raw) return 0;
+  if (!raw && raw !== 0) return 0;
   const s = String(raw).trim().toLowerCase();
   if (["1", "true", "yes", "high"].includes(s)) return 1;
   return 0;
@@ -41,10 +44,11 @@ function parseBloodPressure(bpRaw) {
     const n1 = Number(parts[0]), n2 = Number(parts[1]);
     if (!isNaN(n1) && !isNaN(n2)) return (n1 + n2) / 2;
   }
-  return Number(s) || null;
+  const n = Number(s);
+  return isNaN(n) ? null : n;
 }
 
-/* ---------- colors ---------- */
+/* Colors (your OKLCH / tokens) */
 const COLORS = {
   areaBMI: "oklch(62.3% .214 259.815)",
   areaBP: "oklch(62.7% .265 303.9)",
@@ -62,14 +66,13 @@ const COLORS = {
   accentRed: "#dc2626",
 };
 
-/* ---------- legend ---------- */
 function CustomLegend({ payload }) {
   if (!payload || !payload.length) return null;
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 12, paddingTop: 8 }}>
       {payload.map((entry, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 12, height: 12, background: entry.color, borderRadius: 3 }} />
+          <span style={{ width: 12, height: 12, background: entry.color || "#ccc", borderRadius: 3 }} />
           <span style={{ fontSize: 13, color: COLORS.textMuted }}>{entry.value}</span>
         </div>
       ))}
@@ -77,7 +80,6 @@ function CustomLegend({ payload }) {
   );
 }
 
-/* ---------- main ---------- */
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [ageAgg, setAgeAgg] = useState([]);
@@ -92,11 +94,11 @@ export default function Dashboard() {
   useEffect(() => {
     fetch("/heart.csv")
       .then((r) => {
-        if (!r.ok) throw new Error("Place heart.csv inside public/ folder");
+        if (!r.ok) throw new Error("Place heart.csv in public/");
         return r.text();
       })
-      .then((text) => {
-        Papa.parse(text, {
+      .then((csv) => {
+        Papa.parse(csv, {
           header: true,
           skipEmptyLines: true,
           complete: (res) => processData(res.data),
@@ -108,20 +110,17 @@ export default function Dashboard() {
 
   function processData(rows) {
     const cleaned = rows.map((row) => ({
-      Age: Number(row.Age) || 0,
-      BMI: Number(row.BMI) || 0,
-      BloodPressure: parseBloodPressure(row.BloodPressure) || 0,
-      Cholesterol: Number(row.Cholesterol) || 0,
-      HeartRate: Number(row["Heart Rate"]) || 0,
-      HeartRisk: parseHeartRisk(row["Heart Attack Risk"]),
+      Age: Number(row["Age"] || row["age"] || row["Age(years)"]) || 0,
+      BMI: Number(row["BMI"] || row["bmi"]) || 0,
+      BloodPressure: parseBloodPressure(row["BloodPressure"] || row["blood_pressure"] || row["Blood Pressure"]) || 0,
+      HeartRate: Number(row["Heart Rate"] || row["heartrate"] || row["HeartRate"]) || 0,
+      Cholesterol: Number(row["Cholesterol"] || row["cholesterol"] || row["chol"]) || 0,
+      HeartRisk: parseHeartRisk(row["Heart Attack Risk"] || row["HeartRisk"] || row["risk"]),
     }));
 
-    const valid = cleaned.filter(
-      (r) => r.Age > 0 || r.BMI > 0 || r.HeartRate > 0 || r.Cholesterol > 0 || r.BloodPressure > 0
-    );
-
+    const valid = cleaned.filter((r) => r.Age > 0 || r.BMI > 0 || r.HeartRate > 0 || r.Cholesterol > 0);
     if (!valid.length) {
-      setError("No valid rows found");
+      setError("No usable rows found");
       setLoading(false);
       return;
     }
@@ -130,26 +129,22 @@ export default function Dashboard() {
     const atRisk = valid.reduce((acc, r) => acc + (r.HeartRisk === 1 ? 1 : 0), 0);
     setSummary({ total, atRisk });
 
-    // group by age bins
-    const map = {};
+    // bins
+    const bins = {};
     valid.forEach((r) => {
-      const bin = ageBinLabel(r.Age);
-      if (!map[bin]) map[bin] = { bin, bmi: 0, bp: 0, chol: 0, c: 0, r0: 0, r1: 0 };
-      map[bin].bmi += r.BMI;
-      map[bin].bp += r.BloodPressure;
-      map[bin].chol += r.Cholesterol;
-      map[bin].c++;
-      if (r.HeartRisk === 1) map[bin].r1++;
-      else map[bin].r0++;
+      const bin = ageBinLabel(r.Age || 0);
+      if (!bins[bin]) bins[bin] = { bin, bmiSum: 0, bpSum: 0, cholSum: 0, count: 0, r0: 0, r1: 0 };
+      bins[bin].bmiSum += r.BMI;
+      bins[bin].bpSum += r.BloodPressure;
+      bins[bin].cholSum += r.Cholesterol;
+      bins[bin].count += 1;
+      if (r.HeartRisk === 1) bins[bin].r1++; else bins[bin].r0++;
     });
+    const sorted = Object.values(bins).sort((a, b) => Number(a.bin.split("-")[0]) - Number(b.bin.split("-")[0]));
+    setAgeAgg(sorted.map((b) => ({ date: b.bin, avgBMI: +(b.bmiSum / b.count).toFixed(1), avgBP: +(b.bpSum / b.count).toFixed(1) })));
+    setRiskStack(sorted.map((b) => ({ ageBin: b.bin, noRisk: b.r0, atRisk: b.r1 })));
+    setCholByAge(sorted.map((b) => ({ date: b.bin, chol: +(b.cholSum / b.count).toFixed(1) })));
 
-    const bins = Object.values(map).sort((a, b) => Number(a.bin.split("-")[0]) - Number(b.bin.split("-")[0]));
-
-    setAgeAgg(bins.map((b) => ({ date: b.bin, avgBMI: +(b.bmi / b.c).toFixed(1), avgBP: +(b.bp / b.c).toFixed(1) })));
-    setRiskStack(bins.map((b) => ({ ageBin: b.bin, noRisk: b.r0, atRisk: b.r1 })));
-    setCholByAge(bins.map((b) => ({ date: b.bin, chol: +(b.chol / b.c).toFixed(1) })));
-
-    // scatter samples
     const pts0 = [], pts1 = [];
     valid.forEach((r) => {
       if (!r.BMI || !r.HeartRate) return;
@@ -157,124 +152,115 @@ export default function Dashboard() {
       if (r.HeartRisk === 1) pts1.push(p);
       else pts0.push(p);
     });
-    setScatterRisk0(pts0.slice(0, 220));
-    setScatterRisk1(pts1.slice(0, 220));
+
+    const sample = (arr, n) => {
+      if (arr.length <= n) return arr.slice();
+      const step = arr.length / n;
+      return Array.from({ length: n }, (_, i) => arr[Math.floor(i * step)]);
+    };
+    setScatterRisk0(sample(pts0, 220));
+    setScatterRisk1(sample(pts1, 220));
 
     setLoading(false);
   }
-
-  // layout helpers: ensure the top scatter fits inside wrapper precisely
-  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1400;
-  const isMobile = viewportW < 768;
-  const isDesktop = viewportW >= 1024;
-
-  // wrapper (center content) — keep maxWidth stable
-  const wrapper = { maxWidth: 1400, margin: "0 auto", padding: "0 20px", boxSizing: "border-box" };
-
-  // TOP wide scatter card: use a safe max width slightly less than wrapper to avoid overflow
-  // 1100 works well for most laptop widths and matches your screenshot behavior
-  const scatterCard = {
-    background: COLORS.cardBg,
-    borderRadius: 16,
-    padding: 22,
-    boxShadow: "0 14px 36px rgba(2,6,23,0.06)",
-    width: "100%",
-    maxWidth: 1100, // IMPORTANT: prevents overflow at 100% zoom
-    margin: "18px auto",
-    boxSizing: "border-box",
-  };
-
-  // bottom row: keep fixed widths on desktop (left small, mid bigger, right small)
-  const cardsRow = {
-    display: "flex",
-    gap: 28,
-    justifyContent: "center",
-    alignItems: "flex-start",
-    flexWrap: isMobile ? "wrap" : "nowrap",
-    marginTop: 24,
-  };
-  const leftW = isDesktop ? 360 : isMobile ? "100%" : "48%";
-  const midW = isDesktop ? 520 : isMobile ? "100%" : "48%";
-  const rightW = isDesktop ? 360 : isMobile ? "100%" : "100%";
-
-  const cardBase = (w) => ({
-    background: COLORS.cardBg,
-    borderRadius: 16,
-    padding: 18,
-    boxShadow: "0 14px 36px rgba(2,6,23,0.06)",
-    width: w,
-    boxSizing: "border-box",
-  });
 
   if (loading) return <div style={{ padding: 18 }}>Loading…</div>;
   if (error) return <div style={{ padding: 18, color: "crimson" }}>Error: {error}</div>;
 
   const percentAtRisk = Math.round((summary.atRisk / (summary.total || 1)) * 1000) / 10;
   const pieData = [{ name: "At Risk", value: summary.atRisk }, { name: "No Risk", value: Math.max(0, summary.total - summary.atRisk) }];
+  const PIE_COLORS = [COLORS.pieSlice1, COLORS.pieSlice2];
+
+  // embedded responsive CSS
+  const embeddedStyles = `
+    .dash-wrapper { max-width:1400px; margin:0 auto; padding:0 20px; box-sizing:border-box; }
+    .header-center { text-align:center; margin-bottom:22px; }
+    .scatter-card { background:${COLORS.cardBg}; border-radius:16px; padding:22px; box-shadow:0 14px 36px rgba(2,6,23,0.06); width:100%; max-width:980px; margin:0 auto 18px; box-sizing:border-box;}
+    .cards-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:28px; align-items:start; margin-top:18px; }
+    .card { background:${COLORS.cardBg}; border-radius:16px; padding:20px; box-shadow:0 14px 36px rgba(2,6,23,0.06); box-sizing:border-box; }
+    .chart-large { height:420px; }
+    .chart-medium { height:300px; }
+    .chart-small { height:220px; }
+    @media (max-width:600px) {
+      .cards-grid { grid-template-columns: 1fr; gap:16px; padding:0 8px; }
+      .card { padding:14px; border-radius:14px; }
+      .scatter-card { padding:14px; max-width:100%; margin-bottom:12px; }
+      .chart-large { height:260px; }
+      .chart-medium { height:220px; }
+      .chart-small { height:180px; }
+      .header-center h1 { font-size:26px; }
+    }
+    @media (min-width:601px) and (max-width:1024px) {
+      .cards-grid { grid-template-columns: repeat(2, 1fr); gap:20px; }
+      .chart-large { height:360px; }
+      .chart-medium { height:260px; }
+      .chart-small { height:200px; }
+    }
+  `;
+
+  // helper tick formatters
+  const roundTick = (v) => {
+    if (v === null || v === undefined) return "";
+    if (Math.abs(v) >= 1000) return Math.round(v); // preserve integer for big numbers
+    // if nearly integer, show integer
+    if (Math.abs(v - Math.round(v)) < 0.01) return Math.round(v);
+    return Number(v.toFixed(0)); // integer-ish
+  };
+  const oneDec = (v) => (typeof v === "number" ? Number(v.toFixed(1)) : v);
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#f1f5f9,#eef3f8)" }}>
-      <div style={wrapper}>
-        {/* header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginTop: 8 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 36, fontWeight: 800, color: "#0f172a" }}>Heart Disease Dashboard</h1>
-            <div style={{ marginTop: 6, color: "#475569" }}>Using Age, BMI, Blood Pressure, Heart Rate, Cholesterol & Risk</div>
-          </div>
+      <style>{embeddedStyles}</style>
 
-          <div style={{ textAlign: "right", minWidth: 180 }}>
-            <div style={{ fontSize: 13, color: "#94a3b8" }}>Total records</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>{summary.total}</div>
-            <div style={{ marginTop: 8, color: "#475569" }}>
-              At risk: <span style={{ color: COLORS.accentRed, fontWeight: 800 }}>{summary.atRisk}</span> ({percentAtRisk}%)
-            </div>
+      <div className="dash-wrapper">
+        <div className="header-center">
+          <h1 style={{ margin: 0, fontSize: 36, fontWeight: 800, color: COLORS.textMuted }}>Heart Disease Data Dashboard</h1>
+          <div style={{ marginTop: 6, color: "#475569" }}>Using Age, BMI, Blood Pressure, Heart Rate, Cholesterol & Risk</div>
+          <div style={{ marginTop: 12, fontSize: 15, color: COLORS.textMuted }}>
+            <strong>Total records:</strong> {summary.total} &nbsp;&nbsp;•&nbsp;&nbsp;
+            <strong style={{ color: COLORS.accentRed }}>At risk: {summary.atRisk} ({percentAtRisk}%)</strong>
           </div>
         </div>
 
-        {/* TOP WIDE SCATTER CARD */}
-        <div style={scatterCard}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>Heart Rate vs BMI (bubble = Cholesterol)</div>
+        {/* Large centered scatter */}
+        <div className="scatter-card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.textMuted }}>Heart Rate vs BMI (bubble = Cholesterol)</div>
             <div style={{ fontSize: 13, color: "#64748b" }}>X = BMI • Y = Heart Rate • Bubble = Cholesterol</div>
           </div>
 
-          {/* IMPORTANT: chart margins adjusted so axis ticks/labels don't overflow */}
-          <div style={{ height: 420 }}>
+          <div className="chart-large">
             <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart margin={{ top: 8, right: 22, left: 48, bottom: 28 }}>
+              <ScatterChart margin={{ top: 8, right: 12, left: 40, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
                 <XAxis
                   type="number"
                   dataKey="BMI"
-                  tick={{ fill: COLORS.textMuted }}
-                  label={{ value: "BMI (kg/m²)", position: "bottom", offset: 6 }}
+                  tick={{ fill: COLORS.textMuted, fontSize: 12 }}
+                  tickFormatter={roundTick}
                   domain={["dataMin - 1", "dataMax + 1"]}
+                  label={{ value: "BMI (kg/m²)", position: "bottom", offset: 6 }}
                 />
                 <YAxis
                   type="number"
                   dataKey="HeartRate"
-                  tick={{ fill: COLORS.textMuted }}
-                  label={{ value: "Heart Rate (bpm)", angle: -90, position: "insideLeft", offset: -6 }}
+                  tick={{ fill: COLORS.textMuted, fontSize: 12 }}
+                  tickFormatter={roundTick}
                   domain={["dataMin - 5", "dataMax + 5"]}
+                  label={{ value: "Heart Rate (bpm)", angle: -90, position: "insideLeft", offset: -8 }}
                 />
                 <ZAxis dataKey="Cholesterol" range={[40, 140]} />
                 <Tooltip cursor={{ strokeDasharray: "3 3" }} />
                 <Legend
                   content={() => (
                     <div style={{ display: "flex", gap: 18, marginTop: 8 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ width: 12, height: 12, background: COLORS.scatterNoBox }} />
-                        <span style={{ color: COLORS.textMuted }}>No Risk</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ width: 12, height: 12, background: COLORS.scatterAtBox }} />
-                        <span style={{ color: COLORS.textMuted }}>At Risk</span>
-                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ width: 12, height: 12, background: COLORS.scatterNoBox }} /> <span style={{ color: COLORS.textMuted }}>No Risk</span></div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}><span style={{ width: 12, height: 12, background: COLORS.scatterAtBox }} /> <span style={{ color: COLORS.textMuted }}>At Risk</span></div>
                     </div>
                   )}
                 />
-                <Scatter data={scatterRisk0} fill={COLORS.scatterNo} />
-                <Scatter data={scatterRisk1} fill={COLORS.scatterAt} />
+                <Scatter name="No Risk" data={scatterRisk0} fill={COLORS.scatterNo} />
+                <Scatter name="At Risk" data={scatterRisk1} fill={COLORS.scatterAt} />
               </ScatterChart>
             </ResponsiveContainer>
           </div>
@@ -282,15 +268,16 @@ export default function Dashboard() {
           <div style={{ marginTop: 12, color: "#64748b", fontSize: 13 }}>Bubble size represents cholesterol — larger bubble = higher cholesterol.</div>
         </div>
 
-        {/* BOTTOM THREE CARDS (fixed widths on desktop to avoid stretched look) */}
-        <div style={cardsRow}>
-          <div style={cardBase(leftW)}>
+        {/* three smaller charts */}
+        <div className="cards-grid">
+          {/* Area BMI/BP */}
+          <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>Avg BMI & Blood Pressure by Age</div>
             </div>
-            <div style={{ height: 220 }}>
+            <div className="chart-medium">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={ageAgg} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                <AreaChart data={ageAgg} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={COLORS.areaBMI} stopOpacity={0.45} />
@@ -301,58 +288,56 @@ export default function Dashboard() {
                       <stop offset="95%" stopColor={COLORS.areaBP} stopOpacity={0.08} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="date" tick={{ fill: COLORS.textMuted }} />
-                  <YAxis tick={{ fill: COLORS.textMuted }} />
+                  <XAxis dataKey="date" tick={{ fill: COLORS.textMuted, fontSize: 11 }} />
+                  <YAxis tick={{ fill: COLORS.textMuted, fontSize: 11 }} tickFormatter={oneDec} />
                   <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
                   <Tooltip />
-                  <Area dataKey="avgBMI" stroke={COLORS.areaBMI} fill="url(#g1)" name="Avg BMI" />
-                  <Area dataKey="avgBP" stroke={COLORS.areaBP} fill="url(#g2)" name="Avg BP" />
+                  <Legend content={CustomLegend} verticalAlign="bottom" />
+                  <Area type="monotone" dataKey="avgBMI" stroke={COLORS.areaBMI} fill="url(#g1)" name="Avg BMI" strokeWidth={2} />
+                  <Area type="monotone" dataKey="avgBP" stroke={COLORS.areaBP} fill="url(#g2)" name="Avg Blood Pressure" strokeWidth={2} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-            <div style={{ marginTop: 10, fontSize: 13, color: "#64748b" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, background: COLORS.areaBMI, borderRadius: 3 }} /> Avg BMI</span>
-              {"  "}
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, marginLeft: 14 }}><span style={{ width: 12, height: 12, background: COLORS.areaBP, borderRadius: 3 }} /> Avg Blood Pressure</span>
-            </div>
           </div>
 
-          <div style={cardBase(midW)}>
+          {/* Stacked risk */}
+          <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>Heart Attack Risk by Age Bin</div>
             </div>
-            <div style={{ height: 260 }}>
+            <div className="chart-medium">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={riskStack} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="ageBin" tick={{ fill: COLORS.textMuted }} />
-                  <YAxis tick={{ fill: COLORS.textMuted }} />
+                <BarChart data={riskStack} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <XAxis dataKey="ageBin" tick={{ fill: COLORS.textMuted, fontSize: 11 }} />
+                  <YAxis tick={{ fill: COLORS.textMuted, fontSize: 11 }} tickFormatter={roundTick} tickCount={6} />
                   <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
                   <Tooltip />
                   <Legend content={CustomLegend} />
-                  <Bar dataKey="noRisk" stackId="a" fill={COLORS.riskNo} name="No Risk" />
-                  <Bar dataKey="atRisk" stackId="a" fill={COLORS.riskAt} name="At Risk" />
+                  <Bar dataKey="noRisk" stackId="a" name="No Risk" fill={COLORS.riskNo} />
+                  <Bar dataKey="atRisk" stackId="a" name="At Risk" fill={COLORS.riskAt} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div style={cardBase(rightW)}>
+          {/* Cholesterol (bar or pie) */}
+          <div className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{rightView === "bar" ? "Avg Cholesterol by Age" : "Overall Risk Distribution"}</div>
               <button onClick={() => setRightView((v) => (v === "bar" ? "pie" : "bar"))} style={{ padding: "6px 10px", borderRadius: 8, border: "none", background: COLORS.pieSlice2, color: "white", fontWeight: 700, cursor: "pointer" }}>
                 View: {rightView === "bar" ? "Pie" : "Bar"}
               </button>
             </div>
-            <div style={{ height: 260 }}>
+            <div className="chart-medium">
               {rightView === "bar" ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={cholByAge}>
-                    <XAxis dataKey="date" tick={{ fill: COLORS.textMuted }} />
-                    <YAxis tick={{ fill: COLORS.textMuted }} />
+                  <ComposedChart data={cholByAge} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <XAxis dataKey="date" tick={{ fill: COLORS.textMuted, fontSize: 11 }} />
+                    <YAxis tick={{ fill: COLORS.textMuted, fontSize: 11 }} tickFormatter={roundTick} tickCount={6} />
                     <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
                     <Tooltip />
                     <Legend content={CustomLegend} />
-                    <Bar dataKey="chol" fill={COLORS.cholBar} name="Avg Cholesterol" />
+                    <Bar dataKey="chol" barSize={18} fill={COLORS.cholBar} name="Avg Cholesterol" />
                   </ComposedChart>
                 </ResponsiveContainer>
               ) : (
@@ -361,15 +346,12 @@ export default function Dashboard() {
                     <Tooltip />
                     <Legend content={CustomLegend} />
                     <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="45%" innerRadius={44} outerRadius={72} label>
-                      <Cell fill={COLORS.pieSlice1} />
-                      <Cell fill={COLORS.pieSlice2} />
+                      <Cell fill={PIE_COLORS[0]} />
+                      <Cell fill={PIE_COLORS[1]} />
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
               )}
-            </div>
-            <div style={{ marginTop: 8, color: "#64748b", fontSize: 13 }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, background: COLORS.cholBar, borderRadius: 3 }} /> Avg Cholesterol</span>
             </div>
           </div>
         </div>
