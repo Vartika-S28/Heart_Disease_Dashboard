@@ -21,6 +21,14 @@ import {
   ZAxis,
 } from "recharts";
 
+/* Dashboard.jsx
+   - centered header + summary
+   - large scatter is centered and limited so it doesn't stretch the layout
+   - three smaller charts below are responsive and sit in one row on wide screens
+   - uses the COLORS palette you provided
+   - drop this file into src/ and keep public/heart.csv
+*/
+
 const AGE_BIN_SIZE = 5;
 function ageBinLabel(age) {
   const low = Math.floor(age / AGE_BIN_SIZE) * AGE_BIN_SIZE;
@@ -53,32 +61,19 @@ function parseBloodPressure(bpRaw) {
   return null;
 }
 
-/* Updated color palette using your specified colors */
+/* Colors (using the tokens you shared) */
 const COLORS = {
-  // area chart: avg BMI (blue-500) and avg BP (purple-500)
-  areaBMI: "oklch(62.3% .214 259.815)",      // --color-blue-500
-  areaBP: "oklch(62.7% .265 303.9)",         // --color-purple-500
-
-  // stacked risk: noRisk (teal-600) and atRisk (pink-400)
-  riskNo: "oklch(60% .118 184.704)",         // --color-teal-600
-  riskAt: "oklch(71.8% .202 349.761)",       // --color-pink-400
-
-  // cholesterol bars (blue-600)
-  cholBar: "oklch(54.6% .245 262.881)",      // --color-blue-600
-
-  // pie slices
-  pieSlice1: "oklch(71.4% .203 305.504)",    // --color-purple-400
-  pieSlice2: "oklch(70.7% .165 254.624)",    // --color-blue-400
-
-  // scatter distinct colors (blue-700 + indigo-700)
-  scatterNo: "oklch(48.8% .243 264.376)",    // --color-blue-700 with transparency
-  scatterAt: "oklch(45.7% .240 293.267)",    // --color-indigo-700 with transparency
-
-  // legend solid boxes
-  scatterNoBox: "oklch(48.8% .243 264.376)", // blue-700
-  scatterAtBox: "oklch(45.7% .240 293.267)", // indigo-700
-
-  // text / card background
+  areaBMI: "oklch(62.3% .214 259.815)", // blue-500
+  areaBP: "oklch(62.7% .265 303.9)", // purple-500
+  riskNo: "oklch(60% .118 184.704)", // teal-600
+  riskAt: "oklch(71.8% .202 349.761)", // pink-400
+  cholBar: "oklch(54.6% .245 262.881)", // blue-600
+  pieSlice1: "oklch(71.4% .203 305.504)",
+  pieSlice2: "oklch(70.7% .165 254.624)",
+  scatterNo: "oklch(48.8% .243 264.376)",
+  scatterAt: "oklch(45.7% .240 293.267)",
+  scatterNoBox: "oklch(48.8% .243 264.376)",
+  scatterAtBox: "oklch(45.7% .240 293.267)",
   textMuted: "#1e293b",
   cardBg: "rgba(255,255,255,0.98)",
   accentRed: "#dc2626",
@@ -282,30 +277,24 @@ export default function Dashboard() {
   ];
   const PIE_COLORS = [COLORS.pieSlice1, COLORS.pieSlice2];
 
-  const SMALL_CARD_W = 380;
-  const MID_CARD_W = 480;
+  // responsive layout (centered header + restrained large scatter)
   const page = {
     minHeight: "100vh",
     background: "linear-gradient(180deg, #f1f5f9, #e2e8f0)",
     fontFamily: "Inter, Roboto, sans-serif",
     color: "#1e293b",
-    padding: "32px 0",
+    padding: "28px 12px",
     boxSizing: "border-box",
   };
-  const wrapper = { maxWidth: 1440, margin: "0 auto", padding: "0 48px", boxSizing: "border-box" };
-  const headerRow = { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18, gap: 12 };
-  const summaryBox = { textAlign: "right", minWidth: 220 };
+  const wrapper = { maxWidth: 1400, margin: "0 auto", padding: "0 20px", boxSizing: "border-box" };
 
+  // cards grid for the small charts row - try to keep them in one row on wide screens
   const cardsRow = {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "repeat(3, 1fr)",
     gap: 28,
     alignItems: "flex-start",
-    flexWrap: "nowrap",
-    overflowX: "auto",
-    paddingBottom: 6,
-    justifyContent: "center",
-    paddingLeft: 12,
-    paddingRight: 12,
+    marginTop: 18,
   };
 
   const card = {
@@ -313,43 +302,61 @@ export default function Dashboard() {
     borderRadius: 16,
     padding: 20,
     boxShadow: "0 14px 36px rgba(2,6,23,0.06)",
-    width: SMALL_CARD_W,
     boxSizing: "border-box",
-    flex: "0 0 auto",
   };
-  const cardLarge = { ...card, width: MID_CARD_W };
+
+  const scatterCardStyle = {
+    ...card,
+    maxWidth: 980,
+    margin: "0 auto",
+  };
 
   return (
     <div style={page}>
       <div style={wrapper}>
-        <div style={headerRow}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 800, color: COLORS.textMuted }}>Heart Disease Data Dashboard</h1>
-            <div style={{ marginTop: 6, color: COLORS.textMuted }}>Using Age, BMI, Blood Pressure, Heart Rate, Cholesterol & Risk</div>
+        {/* Centered header + summary */}
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <h1 style={{ margin: 0, fontSize: 40, fontWeight: 800, color: COLORS.textMuted }}>
+            Heart Disease Data Dashboard
+          </h1>
+          <div style={{ marginTop: 6, fontSize: 16, color: COLORS.textMuted }}>
+            Using Age, BMI, Blood Pressure, Heart Rate, Cholesterol & Risk
           </div>
-
-          <div style={summaryBox}>
-            <div style={{ fontSize: 12, color: "#64748b" }}>Total records</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "#1e293b" }}>{summary.total}</div>
-            <div style={{ marginTop: 8, color: COLORS.textMuted }}>
-              At risk: <span style={{ color: COLORS.accentRed, fontWeight: 800 }}>{summary.atRisk}</span> ({percentAtRisk}%)
-            </div>
+          <div style={{ marginTop: 14, fontSize: 16, color: COLORS.textMuted }}>
+            <span style={{ fontWeight: 700 }}>Total records:</span> {summary.total} &nbsp;&nbsp;•&nbsp;&nbsp;
+            <span style={{ color: COLORS.accentRed, fontWeight: 800 }}>At risk: {summary.atRisk} ({percentAtRisk}%)</span>
           </div>
         </div>
 
-        <div style={{ marginBottom: 22 }}>
-          <div style={{ ...card, width: "100%", padding: 18, boxSizing: "border-box" }}>
+        {/* Centered large scatter */}
+        <div style={{ marginBottom: 10 }}>
+          <div style={scatterCardStyle}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", wordBreak: "break-word" }}>Heart Rate vs BMI (bubble = Cholesterol)</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: COLORS.textMuted }}>
+                Heart Rate vs BMI (bubble = Cholesterol)
+              </div>
               <div style={{ fontSize: 13, color: "#64748b" }}>X = BMI • Y = Heart Rate • Bubble = Cholesterol</div>
             </div>
-
             <div style={{ height: 420 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ScatterChart margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
-                  <XAxis type="number" dataKey="BMI" name="BMI" tick={{ fontSize: 12, fill: COLORS.textMuted }} domain={["auto", "auto"]} label={{ value: "BMI (kg/m²)", position: "bottom", offset: 0, fill: COLORS.textMuted }} />
-                  <YAxis type="number" dataKey="HeartRate" name="Heart Rate" tick={{ fontSize: 12, fill: COLORS.textMuted }} domain={["auto", "auto"]} label={{ value: "Heart Rate (bpm)", angle: -90, position: "insideLeft", fill: COLORS.textMuted }} />
+                  <XAxis
+                    type="number"
+                    dataKey="BMI"
+                    name="BMI"
+                    tick={{ fontSize: 12, fill: COLORS.textMuted }}
+                    domain={["auto", "auto"]}
+                    label={{ value: "BMI (kg/m²)", position: "bottom", offset: 0, fill: COLORS.textMuted }}
+                  />
+                  <YAxis
+                    type="number"
+                    dataKey="HeartRate"
+                    name="Heart Rate"
+                    tick={{ fontSize: 12, fill: COLORS.textMuted }}
+                    domain={["auto", "auto"]}
+                    label={{ value: "Heart Rate (bpm)", angle: -90, position: "insideLeft", fill: COLORS.textMuted }}
+                  />
                   <ZAxis dataKey="Cholesterol" range={[30, 140]} name="Cholesterol" />
                   <Tooltip cursor={{ strokeDasharray: "3 3" }} formatter={(value, name) => [value, name]} labelFormatter={(label) => `BMI: ${label}`} />
                   <Legend
@@ -366,25 +373,25 @@ export default function Dashboard() {
                       </div>
                     )}
                   />
-                  <Scatter name="No Risk" data={scatterRisk0} fill={COLORS.scatterNo} fillOpacity={0.7} />
-                  <Scatter name="At Risk" data={scatterRisk1} fill={COLORS.scatterAt} fillOpacity={0.7} />
+                  <Scatter name="No Risk" data={scatterRisk0} fill={COLORS.scatterNo} fillOpacity={0.85} />
+                  <Scatter name="At Risk" data={scatterRisk1} fill={COLORS.scatterAt} fillOpacity={0.85} />
                 </ScatterChart>
               </ResponsiveContainer>
             </div>
-
             <div style={{ marginTop: 12, color: "#64748b", fontSize: 14 }}>
               Bubble size represents cholesterol — larger bubble = higher cholesterol.
             </div>
           </div>
         </div>
 
+        {/* Three smaller charts in a centered grid row */}
         <div style={cardsRow}>
+          {/* Area chart: BMI & BP */}
           <div style={card}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", wordBreak: "break-word" }}>Avg BMI & Blood Pressure by Age</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>Avg BMI & Blood Pressure by Age</div>
             </div>
-
-            <div style={{ height: 320 }}>
+            <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={ageAgg} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <defs>
@@ -409,11 +416,12 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div style={cardLarge}>
+          {/* Stacked bar: risk */}
+          <div style={card}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", wordBreak: "break-word" }}>Heart Attack Risk by Age Bin</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>Heart Attack Risk by Age Bin</div>
             </div>
-            <div style={{ height: 360 }}>
+            <div style={{ height: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={riskStack} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                   <XAxis dataKey="ageBin" tick={{ fontSize: 12, fill: COLORS.textMuted }} />
@@ -428,9 +436,10 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Cholesterol (bar or pie toggle) */}
           <div style={card}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b", wordBreak: "break-word" }}>{rightView === "bar" ? "Avg Cholesterol by Age" : "Overall Risk Distribution"}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#1e293b" }}>{rightView === "bar" ? "Avg Cholesterol by Age" : "Overall Risk Distribution"}</div>
               <div>
                 <button
                   onClick={() => setRightView((v) => (v === "bar" ? "pie" : "bar"))}
@@ -449,7 +458,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div style={{ height: 320 }}>
+            <div style={{ height: 300 }}>
               {rightView === "bar" ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={cholByAge} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -458,7 +467,7 @@ export default function Dashboard() {
                     <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
                     <Tooltip />
                     <Legend content={CustomLegend} />
-                    <Bar dataKey="chol" barSize={20} fill={COLORS.cholBar} name="Avg Cholesterol" />
+                    <Bar dataKey="chol" barSize={18} fill={COLORS.cholBar} name="Avg Cholesterol" />
                   </ComposedChart>
                 </ResponsiveContainer>
               ) : (
@@ -466,16 +475,7 @@ export default function Dashboard() {
                   <PieChart>
                     <Tooltip />
                     <Legend content={CustomLegend} />
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="45%"
-                      innerRadius={48}
-                      outerRadius={84}
-                      label={(entry) => `${entry.name}: ${entry.value}`}
-                    >
+                    <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={72} label={(entry) => `${entry.name}: ${entry.value}`}>
                       {pieData.map((entry, idx) => (
                         <Cell key={`cell-${idx}`} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
                       ))}
